@@ -374,7 +374,12 @@ function detectGestures() {
             }
         } else if (isBlocksMode) {
             // --- BLOCKS MODE ---
-            if (allowDraw) {
+            // Swipe-to-clear: ONLY if one hand is present to avoid accidental wipe while moving
+            if (allowDraw && currentHands.length < 2) {
+                if (waveFrames.length > 0) {
+                    const lastW = waveFrames[waveFrames.length - 1];
+                    if (Math.abs(wrist.x - lastW.x) > 0.20 && (time - lastW.time) < 0.1) waveFrames = [];
+                }
                 waveFrames.push({x: wrist.x, time: time});
                 if (waveFrames.length > 15) waveFrames.shift();
                 for (let i = 0; i < waveFrames.length - 1; i++) {
