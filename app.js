@@ -352,6 +352,7 @@ function detectGestures() {
                 }
             }
 
+            const isActivelyDrawing = isPointing;
             if (isActivelyDrawing && allowDraw && (time - lastWipeTime > 2.5) && currentHands.length < 2) {
                 // Return to original lightweight smoothing
                 if (!lastRawIndex.x) lastRawIndex = { x: index.x, y: index.y };
