@@ -382,6 +382,7 @@ function detectGestures() {
             };
             
             if (lastTwoHandMid) {
+                // Moving everything (Blocks + Ink) together
                 blockOffset.x += (mid.x - lastTwoHandMid.x) * width;
                 blockOffset.y += (mid.y - lastTwoHandMid.y) * height;
             }
@@ -390,6 +391,7 @@ function detectGestures() {
             uiGesture.innerText = "MOVING WORLD";
             uiGesture.style.color = '#00f0ff';
             
+            // Lock UI states while moving
             pinchStartTime = 0;
             blockLoadProgress = 0;
             blockHover = null; 
