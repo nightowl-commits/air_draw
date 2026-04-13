@@ -518,6 +518,7 @@ function detectGestures() {
                 }
             }
         } else {
+            // Standard FX Mode Gestures
             if (isPinching && !lastPinchState[idx]) {
                 createShockwave(mapToCanvas(midRaw), themes[currentTheme](time, 1, 1));
                 triggerZap();
@@ -526,14 +527,14 @@ function detectGestures() {
             }
         }
         
-        lastPinchState[idx] = isDrawingGesture;
+        lastPinchState[idx] = isPinching;
     });
 
     if (currentHands[0]) {
         const spread = getDist(currentHands[0][8], currentHands[0][20]);
         let spreadPct = Math.min(Math.round(spread * 350), 100);
-        uiSpread.innerText = spreadPct + '%';
-        if (!lastPinchState.includes(true) && !isAirDrawMode && !isBlocksMode) {
+        if (uiSpread) uiSpread.innerText = spreadPct + '%';
+        if (!isAirDrawMode && !isBlocksMode) {
             uiGesture.innerText = spreadPct > 60 ? "Open Hand" : "Fist";
             uiGesture.style.color = 'inherit';
         }
