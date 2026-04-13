@@ -308,28 +308,19 @@ function detectGestures() {
         const pinkyLen = getDist(hand[20], hand[0]);
         const pinkyKnuckle = getDist(hand[17], hand[0]);
 
-        // Pointing gesture: Index extended, others curled
         const isPointing = (indexLen > indexKnuckle * 1.5) && (middleLen < middleKnuckle * 1.2) && (ringLen < ringKnuckle * 1.2);
-        const isActivelyDrawing = isPointing;
-        
-        // Open palm for Erasing in Blocks Mode
         const isOpenPalm = (indexLen > indexKnuckle * 1.2 && middleLen > middleKnuckle * 1.2 && ringLen > ringKnuckle * 1.2 && pinkyLen > pinkyKnuckle * 1.2);
 
-        // Air Draw: Pointing is the primary draw trigger
-        const isDrawingGesture = isAirDrawMode ? isPointing : isPinching;
         const midRaw = { x: (thumb.x + index.x) / 2, y: (thumb.y + index.y) / 2 };
         const allowDraw = (idx === 0);
 
         if (isAirDrawMode) {
-            
-            // Fast Horizontal Swipe-to-Clear gesture using Sliding Window
+            // --- AIR DRAW MODE ---
+            // Swipe-to-clear
             if (allowDraw) {
                 if (waveFrames.length > 0) {
                     const lastW = waveFrames[waveFrames.length - 1];
-                    // Anti-teleport filter: if hand index swaps, it travels too far instantly
-                    if (Math.abs(wrist.x - lastW.x) > 0.20 && (time - lastW.time) < 0.1) {
-                        waveFrames = [];
-                    }
+                    if (Math.abs(wrist.x - lastW.x) > 0.20 && (time - lastW.time) < 0.1) waveFrames = [];
                 }
                 waveFrames.push({x: wrist.x, time: time});
                 if (waveFrames.length > 15) waveFrames.shift();
@@ -337,12 +328,9 @@ function detectGestures() {
                 for (let i = 0; i < waveFrames.length - 1; i++) {
                     let dx = Math.abs(waveFrames[i].x - wrist.x);
                     let dt = time - waveFrames[i].time;
-                    
                     if (dx > 0.30 && dt < 0.6) {
                         drawingPaths = [];
                         currentDrawPaths[0] = null;
-                        createShockwave(mapToCanvas(midRaw), '#ff003c');
-                        triggerZap();
                         uiGesture.innerText = "WIPE CLEAR!";
                         uiGesture.style.color = '#ff003c';
                         waveFrames = [];
@@ -352,32 +340,20 @@ function detectGestures() {
                 }
             }
 
-            const isActivelyDrawing = isPointing;
-            if (isActivelyDrawing && allowDraw && (time - lastWipeTime > 2.5) && currentHands.length < 2) {
-                // Return to original lightweight smoothing
+            if (isPointing && allowDraw && (time - lastWipeTime > 2.5) && currentHands.length < 2) {
                 if (!lastRawIndex.x) lastRawIndex = { x: index.x, y: index.y };
-                const smoothX = lastRawIndex.x * 0.3 + index.x * 0.7;
-                const smoothY = lastRawIndex.y * 0.3 + index.y * 0.7;
-                lastRawIndex = { x: smoothX, y: smoothY };
+                lastRawIndex.x = lastRawIndex.x * 0.3 + index.x * 0.7;
+                lastRawIndex.y = lastRawIndex.y * 0.3 + index.y * 0.7;
                 
-                // CRITICAL FIX: To write while shifted, we must subtract the offset from the finger point
                 const canvasPt = {
-                    x: (smoothX * width) - blockOffset.x,
-                    y: (smoothY * height) - blockOffset.y
+                    x: (lastRawIndex.x * width) - blockOffset.x,
+                    y: (lastRawIndex.y * height) - blockOffset.y
                 };
                 
                 if (currentDrawPaths[idx]) {
                     const pts = currentDrawPaths[idx].points;
                     const last = pts[pts.length - 1];
-                    const jumpDist = Math.hypot(canvasPt.x - last.x, canvasPt.y - last.y);
-                    
-                    if (jumpDist > 120) {
-                        currentDrawPaths[idx] = {
-                            color: themes[currentTheme](time, idx + 1, 3),
-                            points: [canvasPt]
-                        };
-                        drawingPaths.push(currentDrawPaths[idx]);
-                    } else if (jumpDist > 1.5) {
+                    if (Math.hypot(canvasPt.x - last.x, canvasPt.y - last.y) > 1.5) {
                         pts.push(canvasPt);
                     }
                 } else {
@@ -386,165 +362,92 @@ function detectGestures() {
                         points: [canvasPt]
                     };
                     drawingPaths.push(currentDrawPaths[idx]);
-                    createShockwave({x: smoothX * width, y: smoothY * height}, currentDrawPaths[idx].color);
-                    triggerZap();
                     uiGesture.innerText = "AIR TYPING";
                     uiGesture.style.color = currentDrawPaths[idx].color;
                 }
             } else if (allowDraw) {
-                // Return point to absolute map
                 lastRawIndex = { x: 0, y: 0 };
                 if (currentDrawPaths[idx]) {
                     currentDrawPaths[idx] = null;
                     uiGesture.innerText = "PEN UP";
-                    uiGesture.style.color = 'inherit';
                 }
             }
-        } 
-        
-        // --- SHARED TWO-HAND MOVE LOGIC ---
-        if (currentHands.length >= 2 && allowDraw) {
-            const h2 = currentHands[1];
-            const mid = mapToCanvas({
-                x: (hand[8].x + h2[8].x) / 2,
-                y: (hand[8].y + h2[8].y) / 2
-            });
-            
-            if (lastTwoHandMid) {
-                blockOffset.x += mid.x - lastTwoHandMid.x;
-                blockOffset.y += mid.y - lastTwoHandMid.y;
-            }
-            lastTwoHandMid = mid;
-            
-            // Clear any pending interactions while moving
-            pinchStartTime = 0;
-            blockLoadProgress = 0;
-            if (isAirDrawMode && currentDrawPaths[idx]) currentDrawPaths[idx] = null;
-            
-            uiGesture.innerText = "MOVING WORLD";
-            uiGesture.style.color = '#00f0ff';
-        } else {
-            lastTwoHandMid = null;
-        }
-
-        if (isBlocksMode && currentHands.length < 2) {
+        } else if (isBlocksMode) {
             // --- BLOCKS MODE ---
-            // Swipe-to-clear (hand 0 only)
             if (allowDraw) {
-                if (waveFrames.length > 0) {
-                    const lastW = waveFrames[waveFrames.length - 1];
-                    // Anti-teleport filter: if hand index swaps, it travels too far instantly
-                    if (Math.abs(wrist.x - lastW.x) > 0.20 && (time - lastW.time) < 0.1) {
-                        waveFrames = [];
-                    }
-                }
                 waveFrames.push({x: wrist.x, time: time});
                 if (waveFrames.length > 15) waveFrames.shift();
                 for (let i = 0; i < waveFrames.length - 1; i++) {
-                    let dx = Math.abs(waveFrames[i].x - wrist.x);
-                    let dt = time - waveFrames[i].time;
-                    if (dx > 0.30 && dt < 0.6) {
+                    if (Math.abs(waveFrames[i].x - wrist.x) > 0.30 && (time - waveFrames[i].time) < 0.6) {
                         placedBlocks = [];
                         blockOffset = { x: 0, y: 0 };
                         uiGesture.innerText = "CLEARED";
-                        uiGesture.style.color = '#ff003c';
                         waveFrames = [];
                         lastWipeTime = time;
                         break;
                     }
                 }
             }
-            
-            // SECOND HAND (idx = 1) = IGNORED for gestures (simplified to 1 hand for erase/build, 2 hands for movement)
-            
-            // PRIMARY HAND (idx = 0) = PLACE/ERASE (if 1 hand)
+
             if (allowDraw && (time - lastWipeTime > 2.5) && currentHands.length < 2) {
-                lastTwoHandMid = null;
-                // ONE HAND = PINCH TO PLACE or OPEN PALM TO ERASE
-                // Smooth finger position for target coordinate
-                    if (!lastRawIndex.x) lastRawIndex = { x: index.x, y: index.y };
-                    lastRawIndex.x = lastRawIndex.x * 0.4 + index.x * 0.6;
-                    lastRawIndex.y = lastRawIndex.y * 0.4 + index.y * 0.6;
-                    
-                    const canvasPt = mapToCanvas(lastRawIndex);
-                    const col = Math.floor((canvasPt.x - blockOffset.x) / BLOCK_SIZE);
-                    const row = Math.floor((canvasPt.y - blockOffset.y) / BLOCK_SIZE);
-                    
-                    if (col >= 0 && col < GRID_COLS && row >= 0 && row < GRID_ROWS) {
-                        blockHover = { col, row };
-                        blockLoadPos = canvasPt;
-                        
-                        if (isOpenPalm) {
-                            // OPEN PALM = Instant Eraser
-                            const exists = placedBlocks.findIndex(b => b.col === col && b.row === row);
-                            if (exists !== -1) {
-                                placedBlocks.splice(exists, 1);
-                                uiGesture.innerText = "ERASING";
-                                uiGesture.style.color = '#ff003c';
+                if (!lastRawIndex.x) lastRawIndex = { x: index.x, y: index.y };
+                lastRawIndex.x = lastRawIndex.x * 0.4 + index.x * 0.6;
+                lastRawIndex.y = lastRawIndex.y * 0.4 + index.y * 0.6;
+                
+                const canvasPt = mapToCanvas(lastRawIndex);
+                const col = Math.floor((canvasPt.x - blockOffset.x) / BLOCK_SIZE);
+                const row = Math.floor((canvasPt.y - blockOffset.y) / BLOCK_SIZE);
+                
+                if (col >= 0 && col < GRID_COLS && row >= 0 && row < GRID_ROWS) {
+                    blockHover = { col, row };
+                    blockLoadPos = canvasPt;
+                    if (isOpenPalm) {
+                        const exists = placedBlocks.findIndex(b => b.col === col && b.row === row);
+                        if (exists !== -1) placedBlocks.splice(exists, 1);
+                        uiGesture.innerText = "ERASING";
+                    } else if (isPinching) {
+                        if (pinchStartTime === 0) pinchStartTime = time;
+                        blockLoadProgress = Math.min((time - pinchStartTime) / 0.5, 1.0);
+                        if (blockLoadProgress >= 1.0 && (col !== lastPinchCol || row !== lastPinchRow)) {
+                            if (!placedBlocks.some(b => b.col === col && b.row === row)) {
+                                placedBlocks.push({ col, row, t: time });
                             }
-                            pinchStartTime = 0;
-                            blockLoadProgress = 0;
-                            lastPinchCol = -1;
-                            lastPinchRow = -1;
-                        } else if (isPinching) {
-                            // PINCH HELD = Charge & Place Block
-                            if (pinchStartTime === 0) {
-                                pinchStartTime = time;
-                                lastPinchCol = -1;
-                                lastPinchRow = -1;
-                            }
-                            
-                            const LOAD_TIME = 0.5; // Slightly faster to place
-                            blockLoadProgress = Math.min((time - pinchStartTime) / LOAD_TIME, 1.0);
-                            
-                            if (blockLoadProgress >= 1.0 && (col !== lastPinchCol || row !== lastPinchRow)) {
-                                const exists = placedBlocks.findIndex(b => b.col === col && b.row === row);
-                                if (exists === -1) {
-                                    placedBlocks.push({ col, row, t: time });
-                                }
-                                lastPinchCol = col;
-                                lastPinchRow = row;
-                                pinchStartTime = time; // Reset
-                                uiGesture.innerText = "PLACED";
-                                uiGesture.style.color = '#00ff88';
-                            } else {
-                                uiGesture.innerText = `CHARGING ${Math.round(blockLoadProgress * 100)}%`;
-                                uiGesture.style.color = '#ffcc00';
-                            }
-                        } else {
-                            // DEFAULT IDLE
-                            pinchStartTime = 0;
-                            blockLoadProgress = 0;
-                            lastPinchCol = -1;
-                            lastPinchRow = -1;
+                            lastPinchCol = col; lastPinchRow = row; pinchStartTime = time;
+                            uiGesture.innerText = "PLACED";
                         }
                     } else {
-                        blockHover = null;
-                        blockLoadProgress = 0;
+                        pinchStartTime = 0; blockLoadProgress = 0;
                     }
                 }
             }
         } else {
-            // Standard FX Mode Gestures
             if (isPinching && !lastPinchState[idx]) {
                 createShockwave(mapToCanvas(midRaw), themes[currentTheme](time, 1, 1));
-                triggerZap();
                 uiGesture.innerText = "PINCH !";
-                uiGesture.style.color = '#00ffcc';
             }
         }
-        
+
+        // Shared Panning Logic
+        if (currentHands.length >= 2 && allowDraw) {
+            const h2 = currentHands[1];
+            const mid = mapToCanvas({ x: (hand[8].x + h2[8].x)/2, y: (hand[8].y + h2[8].y)/2 });
+            if (lastTwoHandMid) {
+                blockOffset.x += mid.x - lastTwoHandMid.x;
+                blockOffset.y += mid.y - lastTwoHandMid.y;
+            }
+            lastTwoHandMid = mid;
+            uiGesture.innerText = "MOVING WORLD";
+        } else {
+            lastTwoHandMid = null;
+        }
+
         lastPinchState[idx] = isPinching;
     });
 
     if (currentHands[0]) {
         const spread = getDist(currentHands[0][8], currentHands[0][20]);
-        let spreadPct = Math.min(Math.round(spread * 350), 100);
-        if (uiSpread) uiSpread.innerText = spreadPct + '%';
-        if (!isAirDrawMode && !isBlocksMode) {
-            uiGesture.innerText = spreadPct > 60 ? "Open Hand" : "Fist";
-            uiGesture.style.color = 'inherit';
-        }
+        let pct = Math.min(Math.round(spread * 350), 100);
+        if (uiSpread) uiSpread.innerText = pct + '%';
     }
 }
 
