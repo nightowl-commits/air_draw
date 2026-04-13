@@ -443,8 +443,8 @@ function detectGestures() {
             
             if (lastTwoHandMid) {
                 // Calculate how much the hands moved and apply to the whole world
-                blockOffset.x += mid.x - lastTwoHandMid.x;
-                blockOffset.y += mid.y - lastTwoHandMid.y;
+                blockOffset.x += (mid.x - lastTwoHandMid.x);
+                blockOffset.y += (mid.y - lastTwoHandMid.y);
             }
             lastTwoHandMid = mid;
             
@@ -917,4 +917,3 @@ function initMediaPipe() {
     
     camera.start();
 }
-            
