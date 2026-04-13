@@ -385,8 +385,12 @@ function detectGestures() {
                         points: [canvasPt]
                     };
                     drawingPaths.push(currentDrawPaths[idx]);
+                    createShockwave({x: smoothX * width, y: smoothY * height}, currentDrawPaths[idx].color);
+                    triggerZap();
+                    uiGesture.innerText = "AIR TYPING";
+                    uiGesture.style.color = currentDrawPaths[idx].color;
                 }
-            } else if (allowDraw && drawActiveFrames === 0) {
+            } else if (allowDraw) {
                 // Return point to absolute map
                 lastRawIndex = { x: 0, y: 0 };
                 if (currentDrawPaths[idx]) {
@@ -395,32 +399,34 @@ function detectGestures() {
                     uiGesture.style.color = 'inherit';
                 }
             }
-
-            // --- SHARED TWO-HAND MOVE LOGIC ---
-            if (currentHands.length >= 2 && allowDraw) {
-                const h2 = currentHands[1];
-                const mid = mapToCanvas({
-                    x: (hand[8].x + h2[8].x) / 2,
-                    y: (hand[8].y + h2[8].y) / 2
-                });
-                
-                if (lastTwoHandMid) {
-                    blockOffset.x += mid.x - lastTwoHandMid.x;
-                    blockOffset.y += mid.y - lastTwoHandMid.y;
-                }
-                lastTwoHandMid = mid;
-                
-                // Clear any pending interactions while moving
-                pinchStartTime = 0;
-                blockLoadProgress = 0;
-                if (isAirDrawMode && currentDrawPaths[idx]) currentDrawPaths[idx] = null;
-                
-                uiGesture.innerText = "MOVING WORLD";
-                uiGesture.style.color = '#00f0ff';
-            } else {
-                lastTwoHandMid = null;
+        } 
+        
+        // --- SHARED TWO-HAND MOVE LOGIC ---
+        if (currentHands.length >= 2 && allowDraw) {
+            const h2 = currentHands[1];
+            const mid = mapToCanvas({
+                x: (hand[8].x + h2[8].x) / 2,
+                y: (hand[8].y + h2[8].y) / 2
+            });
+            
+            if (lastTwoHandMid) {
+                blockOffset.x += mid.x - lastTwoHandMid.x;
+                blockOffset.y += mid.y - lastTwoHandMid.y;
             }
-        } else if (isBlocksMode) {
+            lastTwoHandMid = mid;
+            
+            // Clear any pending interactions while moving
+            pinchStartTime = 0;
+            blockLoadProgress = 0;
+            if (isAirDrawMode && currentDrawPaths[idx]) currentDrawPaths[idx] = null;
+            
+            uiGesture.innerText = "MOVING WORLD";
+            uiGesture.style.color = '#00f0ff';
+        } else {
+            lastTwoHandMid = null;
+        }
+
+        if (isBlocksMode && currentHands.length < 2) {
             // --- BLOCKS MODE ---
             // Swipe-to-clear (hand 0 only)
             if (allowDraw) {
