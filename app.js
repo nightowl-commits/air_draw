@@ -352,29 +352,50 @@ function detectGestures() {
                 if (currentDrawPaths[idx]) {
                     const pts = currentDrawPaths[idx].points;
                     const last = pts[pts.length - 1];
+                    // Correctly map stroke to world coordinates shifted by offset
                     if (Math.hypot(canvasPt.x - last.x, canvasPt.y - last.y) > 1.5) {
                         pts.push(canvasPt);
                     }
-                } else if (currentHands.length < 2) { // Only start new strokes with 1 hand
+                } else if (currentHands.length < 2) { 
                     currentDrawPaths[idx] = {
                         color: themes[currentTheme](time, idx + 1, 3),
                         points: [canvasPt]
                     };
                     drawingPaths.push(currentDrawPaths[idx]);
                     uiGesture.innerText = "AIR TYPING";
-                    uiGesture.style.color = currentDrawPaths[idx].color;
                 }
             } else if (allowDraw) {
                 lastRawIndex = { x: 0, y: 0 };
                 if (currentDrawPaths[idx]) {
                     currentDrawPaths[idx] = null;
-                    uiGesture.innerText = "PEN UP";
                 }
             }
-        } else if (isBlocksMode) {
+        } 
+        
+        // --- SHARED WORLD PANNING ---
+        if (currentHands.length >= 2 && allowDraw) {
+            const h2 = currentHands[1];
+            const mid = mapToCanvas({ x: (hand[8].x + h2[8].x)/2, y: (hand[8].y + h2[8].y)/2 });
+            if (lastTwoHandMid) {
+                blockOffset.x += mid.x - lastTwoHandMid.x;
+                blockOffset.y += mid.y - lastTwoHandMid.y;
+            }
+            lastTwoHandMid = mid;
+            uiGesture.innerText = "MOVING WORLD";
+            uiGesture.style.color = '#00f0ff';
+            
+            pinchStartTime = 0;
+            blockLoadProgress = 0;
+            blockHover = null; 
+            currentDrawPaths[idx] = null;
+        } else {
+            lastTwoHandMid = null;
+        }
+        
+        if (isBlocksMode && currentHands.length < 2) {
             // --- BLOCKS MODE ---
             // Swipe-to-clear: ONLY if one hand is present to avoid accidental wipe while moving
-            if (allowDraw && currentHands.length < 2) {
+            if (allowDraw) {
                 if (waveFrames.length > 0) {
                     const lastW = waveFrames[waveFrames.length - 1];
                     if (Math.abs(wrist.x - lastW.x) > 0.20 && (time - lastW.time) < 0.1) waveFrames = [];
@@ -392,8 +413,9 @@ function detectGestures() {
                     }
                 }
             }
-
-            if (allowDraw && (time - lastWipeTime > 2.5) && currentHands.length < 2) {
+            
+            // PRIMARY HAND (idx = 0) = PLACE/ERASE
+            if (allowDraw && (time - lastWipeTime > 2.5)) {
                 if (!lastRawIndex.x) lastRawIndex = { x: index.x, y: index.y };
                 lastRawIndex.x = lastRawIndex.x * 0.4 + index.x * 0.6;
                 lastRawIndex.y = lastRawIndex.y * 0.4 + index.y * 0.6;
@@ -405,63 +427,51 @@ function detectGestures() {
                 if (col >= 0 && col < GRID_COLS && row >= 0 && row < GRID_ROWS) {
                     blockHover = { col, row };
                     blockLoadPos = canvasPt;
+                    
                     if (isOpenPalm) {
                         const exists = placedBlocks.findIndex(b => b.col === col && b.row === row);
-                        if (exists !== -1) placedBlocks.splice(exists, 1);
-                        uiGesture.innerText = "ERASING";
+                        if (exists !== -1) {
+                            placedBlocks.splice(exists, 1);
+                            uiGesture.innerText = "ERASING";
+                            uiGesture.style.color = '#ff003c';
+                        }
+                        pinchStartTime = 0;
+                        blockLoadProgress = 0;
                     } else if (isPinching) {
-                        if (pinchStartTime === 0) pinchStartTime = time;
+                        if (pinchStartTime === 0) {
+                            pinchStartTime = time;
+                            lastPinchCol = -1;
+                            lastPinchRow = -1;
+                        }
+                        
                         blockLoadProgress = Math.min((time - pinchStartTime) / 0.5, 1.0);
+                        
                         if (blockLoadProgress >= 1.0 && (col !== lastPinchCol || row !== lastPinchRow)) {
-                            if (!placedBlocks.some(b => b.col === col && b.row === row)) {
+                            const exists = placedBlocks.findIndex(b => b.col === col && b.row === row);
+                            if (exists === -1) {
                                 placedBlocks.push({ col, row, t: time });
                             }
-                            lastPinchCol = col; lastPinchRow = row; pinchStartTime = time;
+                            lastPinchCol = col;
+                            lastPinchRow = row;
+                            pinchStartTime = time; 
                             uiGesture.innerText = "PLACED";
+                            uiGesture.style.color = '#00ff88';
+                        } else {
+                            uiGesture.innerText = `CHARGING ${Math.round(blockLoadProgress * 100)}%`;
+                            uiGesture.style.color = '#ffcc00';
                         }
                     } else {
-                        pinchStartTime = 0; blockLoadProgress = 0;
+                        pinchStartTime = 0;
+                        blockLoadProgress = 0;
+                        lastPinchCol = -1;
+                        lastPinchRow = -1;
                     }
+                } else {
+                    blockHover = null;
+                    blockLoadProgress = 0;
                 }
             }
-        } else {
-            if (isPinching && !lastPinchState[idx]) {
-                createShockwave(mapToCanvas(midRaw), themes[currentTheme](time, 1, 1));
-                uiGesture.innerText = "PINCH !";
-            }
         }
-
-        // --- SHARED WORLD PANNING ---
-        // Move everything (Blocks + Text) together when two hands are present
-        if (currentHands.length >= 2 && allowDraw) {
-            const h2 = currentHands[1];
-            // Track movement based on the midpoint of the two index fingers
-            const mid = mapToCanvas({ 
-                x: (hand[8].x + h2[8].x) / 2, 
-                y: (hand[8].y + h2[8].y) / 2 
-            });
-            
-            if (lastTwoHandMid) {
-                // Calculate how much the hands moved and apply to the whole world
-                blockOffset.x += (mid.x - lastTwoHandMid.x);
-                blockOffset.y += (mid.y - lastTwoHandMid.y);
-            }
-            lastTwoHandMid = mid;
-            
-            // Visual feedback
-            uiGesture.innerText = "MOVING WORLD";
-            uiGesture.style.color = '#00f0ff';
-            
-            // LOCK OUT all placement/erasing while moving
-            pinchStartTime = 0;
-            blockLoadProgress = 0;
-            blockHover = null; 
-            currentDrawPaths[idx] = null;
-        } else {
-            lastTwoHandMid = null;
-        }
-
-        lastPinchState[idx] = isPinching;
     });
 
     if (currentHands[0]) {
@@ -767,18 +777,16 @@ function renderLoop(timestamp) {
             if (path.points.length < 2) return;
             ctx.beginPath();
             ctx.moveTo(path.points[0].x, path.points[0].y);
+            // Translate drawing points by the SAME world offset used for blocks
             for (let i = 1; i < path.points.length - 2; i++) {
-                const xc = (path.points[i].x + path.points[i + 1].x) / 2;
-                const yc = (path.points[i].y + path.points[i + 1].y) / 2;
+                const xc = (path.points[i].x + path.points[i+1].x) / 2;
+                const yc = (path.points[i].y + path.points[i+1].y) / 2;
                 ctx.quadraticCurveTo(path.points[i].x, path.points[i].y, xc, yc);
             }
             if (path.points.length > 2) {
-                ctx.quadraticCurveTo(
-                    path.points[path.points.length - 2].x, 
-                    path.points[path.points.length - 2].y, 
-                    path.points[path.points.length - 1].x, 
-                    path.points[path.points.length - 1].y
-                );
+                const p1 = path.points[path.points.length-2];
+                const p2 = path.points[path.points.length-1];
+                ctx.quadraticCurveTo(p1.x, p1.y, p2.x, p2.y);
             } else {
                 ctx.lineTo(path.points[1].x, path.points[1].y);
             }
