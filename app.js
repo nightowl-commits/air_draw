@@ -297,7 +297,6 @@ function detectGestures() {
         const wrist = hand[0];
         
         const dist = getDist(thumb, index);
-        // Optimized pinch for Air Typing: balanced between strict and relaxed
         const isPinching = dist < 0.06; 
         
         const indexLen = getDist(hand[8], hand[0]);
@@ -311,6 +310,7 @@ function detectGestures() {
 
         // Pointing gesture: Index extended, others curled
         const isPointing = (indexLen > indexKnuckle * 1.5) && (middleLen < middleKnuckle * 1.2) && (ringLen < ringKnuckle * 1.2);
+        const isActivelyDrawing = isPointing;
         
         // Open palm for Erasing in Blocks Mode
         const isOpenPalm = (indexLen > indexKnuckle * 1.2 && middleLen > middleKnuckle * 1.2 && ringLen > ringKnuckle * 1.2 && pinkyLen > pinkyKnuckle * 1.2);
