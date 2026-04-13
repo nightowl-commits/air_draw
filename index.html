@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Aura AR: Advanced Hand Tracking</title>
+    
+    <!-- Google Fonts for Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Space+Mono&display=swap" rel="stylesheet">
+    
+    <!-- MediaPipe Hands CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <link rel="stylesheet" href="style.css?v=5">
+</head>
+<body>
+
+    <!-- Start Overlay (Required for AudioContext & Camera Consent) -->
+    <div id="startOverlay" class="overlay">
+        <div class="overlay-content">
+            <h1 class="glitch-text" data-text="NEON AURA AR">NEON AURA AR</h1>
+            <p class="subtitle">An advanced audio-visual hand tracking experience.</p>
+            <div class="permission-box">
+                <p>This experience requires access to your camera.</p>
+            </div>
+            <button class="start-btn pulse" id="startBtn">
+                <span class="btn-text">INITIALIZE SYSTEM</span>
+            </button>
+            <div style="margin-top: 50px; font-family: 'Outfit', sans-serif; font-size: 1.2rem; color: #00f0ff; letter-spacing: 5px; font-weight: 600; text-transform: uppercase; text-shadow: 0 0 10px rgba(0,240,255,0.5);">By Mudit Jain</div>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="app-container">
+        <!-- Hidden video element for raw feed -->
+        <video class="input_video" autoplay playsinline></video>
+        
+        <!-- Canvas Layers (Back to front) -->
+        <canvas id="bgCanvas" class="canvas-layer"></canvas>
+        <canvas id="mainCanvas" class="canvas-layer"></canvas>
+
+        <!-- HUD (Heads Up Display) Overlay -->
+        <div id="hud" class="hud-container hidden">
+            <!-- Left Side HUD -->
+            <div class="hud-panel glass scroll-reveal">
+                <div class="panel-header">
+                    <h3 class="panel-title">SYSTEM STATUS</h3>
+                    <button class="min-btn" onclick="this.parentElement.parentElement.classList.toggle('collapsed')">—</button>
+                </div>
+                <div class="panel-content">
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px;">
+                        <div style="display: flex; gap: 6px;">
+                            <button class="mode-btn active" id="mode-fx" style="flex: 1; font-size: 0.7rem;">VISUAL FX</button>
+                            <button class="mode-btn" id="mode-draw" style="flex: 1; font-size: 0.7rem;">AIR TYPE</button>
+                            <button class="mode-btn" id="mode-blocks" style="flex: 1; font-size: 0.7rem;">BLOCKS</button>
+                        </div>
+                        <div style="display: flex; gap: 6px;">
+                            <button class="mode-btn" id="clearDraw" style="flex: 1; padding: 5px; font-size: 0.75rem; border-color: rgba(255,100,100,0.5); color: #ff9999;">CLEAR INK</button>
+                            <button class="mode-btn" id="clearBlocks" style="flex: 1; padding: 5px; font-size: 0.75rem; border-color: rgba(255,100,100,0.5); color: #ff9999;">CLEAR BLOCKS</button>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-row">
+                        <span class="stat-label">Matrix Rain</span>
+                        <button class="mode-btn active" id="toggleMatrix" style="padding: 4px 12px; font-size: 0.8rem; border-radius: 4px;">ON</button>
+                    </div>
+
+                    <div class="stat-row">
+                        <span class="stat-label">Audio FX</span>
+                        <button class="mode-btn active" id="toggleAudio" style="padding: 4px 12px; font-size: 0.8rem; border-radius: 4px;">ON</button>
+                    </div>
+                    
+                    <div class="stat-row">
+                        <span class="stat-label">Hands Detected</span>
+                        <span class="stat-value highlight" id="ui-hands">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Engine FPS</span>
+                        <span class="stat-value" id="ui-fps">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side HUD -->
+            <div class="hud-panel glass scroll-reveal right">
+                <div class="panel-header">
+                    <h3 class="panel-title">TELEMETRY</h3>
+                    <button class="min-btn" onclick="this.parentElement.parentElement.classList.toggle('collapsed')">—</button>
+                </div>
+                <div class="panel-content">
+                    <div class="stat-row">
+                    <span class="stat-label">Last Gesture</span>
+                    <span class="stat-value glow" id="ui-gesture">Scanning...</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Hand Spread</span>
+                    <span class="stat-value" id="ui-spread">0%</span>
+                    </div>
+            </div>
+            </div>
+        </div>
+
+        <!-- Theme Selector -->
+        <div id="themeContainer" class="theme-bar hidden glass">
+            <button class="theme-btn active" data-theme="Rainbow">Spectrum</button>
+            <button class="theme-btn" data-theme="Cyberpunk">Cyberpunk</button>
+            <button class="theme-btn" data-theme="Lava">Magma</button>
+            <button class="theme-btn" data-theme="Ocean">Abyss</button>
+            <button class="theme-btn" data-theme="Galaxy">Nebula</button>
+        </div>
+    </div>
+
+    <script src="app.js?v=40"></script>
+</body>
+</html>
