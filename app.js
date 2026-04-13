@@ -352,6 +352,55 @@ function detectGestures() {
                 }
             }
 
+            if (isActivelyDrawing && allowDraw && (time - lastWipeTime > 2.5) && currentHands.length < 2) {
+                // Return to original lightweight smoothing
+                if (!lastRawIndex.x) lastRawIndex = { x: index.x, y: index.y };
+                const smoothX = lastRawIndex.x * 0.3 + index.x * 0.7;
+                const smoothY = lastRawIndex.y * 0.3 + index.y * 0.7;
+                lastRawIndex = { x: smoothX, y: smoothY };
+                
+                // CRITICAL FIX: To write while shifted, we must subtract the offset from the finger point
+                const canvasPt = {
+                    x: (smoothX * width) - blockOffset.x,
+                    y: (smoothY * height) - blockOffset.y
+                };
+                
+                if (currentDrawPaths[idx]) {
+                    const pts = currentDrawPaths[idx].points;
+                    const last = pts[pts.length - 1];
+                    const jumpDist = Math.hypot(canvasPt.x - last.x, canvasPt.y - last.y);
+                    
+                    if (jumpDist > 120) {
+                        currentDrawPaths[idx] = {
+                            color: themes[currentTheme](time, idx + 1, 3),
+                            points: [canvasPt]
+                        };
+                        drawingPaths.push(currentDrawPaths[idx]);
+                    } else if (jumpDist > 1.5) {
+                        pts.push(canvasPt);
+                    }
+                } else {
+                    currentDrawPaths[idx] = {
+                        color: themes[currentTheme](time, idx + 1, 3),
+                        points: [canvasPt]
+                    };
+                    drawingPaths.push(currentDrawPaths[idx]);
+                    createShockwave({x: smoothX * width, y: smoothY * height}, currentDrawPaths[idx].color);
+                    triggerZap();
+                    uiGesture.innerText = "AIR TYPING";
+                    uiGesture.style.color = currentDrawPaths[idx].color;
+                }
+                }
+            } else if (allowDraw && drawActiveFrames === 0) {
+                // Return point to absolute map
+                lastRawIndex = { x: 0, y: 0 };
+                if (currentDrawPaths[idx]) {
+                    currentDrawPaths[idx] = null;
+                    uiGesture.innerText = "PEN UP";
+                    uiGesture.style.color = 'inherit';
+                }
+            }
+
             // --- SHARED TWO-HAND MOVE LOGIC ---
             if (currentHands.length >= 2 && allowDraw) {
                 const h2 = currentHands[1];
@@ -366,65 +415,15 @@ function detectGestures() {
                 }
                 lastTwoHandMid = mid;
                 
-                // Pause interaction while moving
+                // Clear any pending interactions while moving
                 pinchStartTime = 0;
                 blockLoadProgress = 0;
                 if (isAirDrawMode && currentDrawPaths[idx]) currentDrawPaths[idx] = null;
                 
-                uiGesture.innerText = "MOVING CANVAS";
+                uiGesture.innerText = "MOVING WORLD";
                 uiGesture.style.color = '#00f0ff';
-            } else if (isAirDrawMode) {
-                // Air Typing: Use index pointing
-                const isActivelyDrawing = isPointing;
+            } else {
                 lastTwoHandMid = null;
-
-                if (isActivelyDrawing && allowDraw && (time - lastWipeTime > 2.5)) {
-                // Return to original lightweight smoothing
-                if (!lastRawIndex.x) lastRawIndex = { x: index.x, y: index.y };
-                const smoothX = lastRawIndex.x * 0.3 + index.x * 0.7;
-                const smoothY = lastRawIndex.y * 0.3 + index.y * 0.7;
-                lastRawIndex = { x: smoothX, y: smoothY };
-                const canvasPt = mapToCanvas({ x: smoothX, y: smoothY });
-                
-                if (currentDrawPaths[idx]) {
-                    // We have an active stroke — check if finger jumped (pen was lifted & moved)
-                    const pts = currentDrawPaths[idx].points;
-                    const last = pts[pts.length - 1];
-                    const jumpDist = Math.hypot(canvasPt.x - last.x, canvasPt.y - last.y);
-                    
-                    if (jumpDist > 120) {
-                        // LARGE JUMP detected — finger was lifted and repositioned
-                        currentDrawPaths[idx] = {
-                            color: themes[currentTheme](time, idx + 1, 3),
-                            points: [canvasPt]
-                        };
-                        drawingPaths.push(currentDrawPaths[idx]);
-                        uiGesture.innerText = "NEW STROKE";
-                        uiGesture.style.color = currentDrawPaths[idx].color;
-                    } else if (jumpDist > 1.5) {
-                        // Normal drawing movement — append point
-                        pts.push(canvasPt);
-                    }
-                } else {
-                    // No active stroke — begin one
-                    currentDrawPaths[idx] = {
-                        color: themes[currentTheme](time, idx + 1, 3),
-                        points: [canvasPt]
-                    };
-                    drawingPaths.push(currentDrawPaths[idx]);
-                    createShockwave(canvasPt, currentDrawPaths[idx].color);
-                    triggerZap();
-                    uiGesture.innerText = "AIR TYPING";
-                    uiGesture.style.color = currentDrawPaths[idx].color;
-                }
-            } else if (allowDraw && drawActiveFrames === 0) {
-                // Finger truly curled — end the current stroke
-                lastRawIndex = { x: 0, y: 0 };
-                if (currentDrawPaths[idx]) {
-                    currentDrawPaths[idx] = null;
-                    uiGesture.innerText = "PEN UP";
-                    uiGesture.style.color = 'inherit';
-                }
             }
         } else if (isBlocksMode) {
             // --- BLOCKS MODE ---
