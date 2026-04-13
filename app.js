@@ -375,12 +375,18 @@ function detectGestures() {
         // --- SHARED WORLD PANNING ---
         if (currentHands.length >= 2 && allowDraw) {
             const h2 = currentHands[1];
-            const mid = mapToCanvas({ x: (hand[8].x + h2[8].x)/2, y: (hand[8].y + h2[8].y)/2 });
+            // Midpoint of thumb-index midpoints of BOTH hands
+            const mid = {
+                x: ((hand[4].x + hand[8].x)/2 + (h2[4].x + h2[8].x)/2) / 2,
+                y: ((hand[4].y + hand[8].y)/2 + (h2[4].y + h2[8].y)/2) / 2
+            };
+            
             if (lastTwoHandMid) {
-                blockOffset.x += mid.x - lastTwoHandMid.x;
-                blockOffset.y += mid.y - lastTwoHandMid.y;
+                blockOffset.x += (mid.x - lastTwoHandMid.x) * width;
+                blockOffset.y += (mid.y - lastTwoHandMid.y) * height;
             }
             lastTwoHandMid = mid;
+            
             uiGesture.innerText = "MOVING WORLD";
             uiGesture.style.color = '#00f0ff';
             
