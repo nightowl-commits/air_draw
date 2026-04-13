@@ -43,6 +43,7 @@ let lastWipeTime = 0; // Cooldown timer after wipe gesture
 let drawActiveFrames = 0; // Sticky draw counter - prevents flicker breaks
 const DRAW_STICKY_FRAMES = 6; // Keep drawing for this many frames after gesture flickers off
 let lastRawIndex = { x: 0, y: 0 }; // For light smoothing
+let drawOffset = { x: 0, y: 0 }; // Shared with blockOffset for cross-mode consistency
 
 // --- Blocks Mode State ---
 let isBlocksMode = false;
@@ -351,10 +352,33 @@ function detectGestures() {
                 }
             }
 
-            // Air Typing: Use index pointing
-            const isActivelyDrawing = isPointing;
+            // --- SHARED TWO-HAND MOVE LOGIC ---
+            if (currentHands.length >= 2 && allowDraw) {
+                const h2 = currentHands[1];
+                const mid = mapToCanvas({
+                    x: (hand[8].x + h2[8].x) / 2,
+                    y: (hand[8].y + h2[8].y) / 2
+                });
+                
+                if (lastTwoHandMid) {
+                    blockOffset.x += mid.x - lastTwoHandMid.x;
+                    blockOffset.y += mid.y - lastTwoHandMid.y;
+                }
+                lastTwoHandMid = mid;
+                
+                // Pause interaction while moving
+                pinchStartTime = 0;
+                blockLoadProgress = 0;
+                if (isAirDrawMode && currentDrawPaths[idx]) currentDrawPaths[idx] = null;
+                
+                uiGesture.innerText = "MOVING CANVAS";
+                uiGesture.style.color = '#00f0ff';
+            } else if (isAirDrawMode) {
+                // Air Typing: Use index pointing
+                const isActivelyDrawing = isPointing;
+                lastTwoHandMid = null;
 
-            if (isActivelyDrawing && allowDraw && (time - lastWipeTime > 2.5)) {
+                if (isActivelyDrawing && allowDraw && (time - lastWipeTime > 2.5)) {
                 // Return to original lightweight smoothing
                 if (!lastRawIndex.x) lastRawIndex = { x: index.x, y: index.y };
                 const smoothX = lastRawIndex.x * 0.3 + index.x * 0.7;
@@ -432,31 +456,11 @@ function detectGestures() {
             
             // SECOND HAND (idx = 1) = IGNORED for gestures (simplified to 1 hand for erase/build, 2 hands for movement)
             
-            // PRIMARY HAND (idx = 0) = MOVE (if 2 hands) or PLACE/ERASE (if 1 hand)
-            if (allowDraw && (time - lastWipeTime > 2.5)) {
-                
-                if (currentHands.length >= 2) {
-                    // TWO HANDS = IMMEDIATELY MOVE structure (no pinch needed, just two hands visible)
-                    const h2 = currentHands[1];
-                    const mid = mapToCanvas({
-                        x: (hand[8].x + h2[8].x) / 2,
-                        y: (hand[8].y + h2[8].y) / 2
-                    });
-                    
-                    if (lastTwoHandMid) {
-                        blockOffset.x += mid.x - lastTwoHandMid.x;
-                        blockOffset.y += mid.y - lastTwoHandMid.y;
-                    }
-                    lastTwoHandMid = mid;
-                    pinchStartTime = 0; // abort charging
-                    blockLoadProgress = 0;
-                    uiGesture.innerText = "MOVING";
-                    uiGesture.style.color = '#00f0ff';
-                } else {
-                    // ONE HAND = PINCH TO PLACE or OPEN PALM TO ERASE
-                    lastTwoHandMid = null;
-                    
-                    // Smooth finger position for target coordinate
+            // PRIMARY HAND (idx = 0) = PLACE/ERASE (if 1 hand)
+            if (allowDraw && (time - lastWipeTime > 2.5) && currentHands.length < 2) {
+                lastTwoHandMid = null;
+                // ONE HAND = PINCH TO PLACE or OPEN PALM TO ERASE
+                // Smooth finger position for target coordinate
                     if (!lastRawIndex.x) lastRawIndex = { x: index.x, y: index.y };
                     lastRawIndex.x = lastRawIndex.x * 0.4 + index.x * 0.6;
                     lastRawIndex.y = lastRawIndex.y * 0.4 + index.y * 0.6;
@@ -830,6 +834,7 @@ function renderLoop(timestamp) {
 
     if (drawingPaths.length > 0) {
         ctx.save();
+        ctx.translate(blockOffset.x, blockOffset.y);
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
         
