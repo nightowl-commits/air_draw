@@ -917,3 +917,4 @@ function initMediaPipe() {
     
     camera.start();
 }
+            
