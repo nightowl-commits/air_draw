@@ -375,23 +375,25 @@ function detectGestures() {
         // --- SHARED WORLD PANNING ---
         if (currentHands.length >= 2 && allowDraw) {
             const h2 = currentHands[1];
-            // Midpoint of thumb-index midpoints of BOTH hands
+            // EXPLICIT CALCULATION: Midpoint of thumb-index midpoints of BOTH hands 
             const mid = {
                 x: ((hand[4].x + hand[8].x)/2 + (h2[4].x + h2[8].x)/2) / 2,
                 y: ((hand[4].y + hand[8].y)/2 + (h2[4].y + h2[8].y)/2) / 2
             };
             
             if (lastTwoHandMid) {
-                // Moving everything (Blocks + Ink) together
-                blockOffset.x += (mid.x - lastTwoHandMid.x) * width;
-                blockOffset.y += (mid.y - lastTwoHandMid.y) * height;
+                // Apply the exact delta scaling from the original video version
+                const dx = (mid.x - lastTwoHandMid.x) * width;
+                const dy = (mid.y - lastTwoHandMid.y) * height;
+                
+                blockOffset.x += dx;
+                blockOffset.y += dy;
             }
             lastTwoHandMid = mid;
             
             uiGesture.innerText = "MOVING WORLD";
             uiGesture.style.color = '#00f0ff';
             
-            // Lock UI states while moving
             pinchStartTime = 0;
             blockLoadProgress = 0;
             blockHover = null; 
@@ -777,7 +779,7 @@ function renderLoop(timestamp) {
 
     if (drawingPaths.length > 0) {
         ctx.save();
-        ctx.translate(blockOffset.x, blockOffset.y);
+        // REMOVED blockOffset translation to keep text static
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
         
@@ -785,7 +787,7 @@ function renderLoop(timestamp) {
             if (path.points.length < 2) return;
             ctx.beginPath();
             ctx.moveTo(path.points[0].x, path.points[0].y);
-            // Translate drawing points by the SAME world offset used for blocks
+            
             for (let i = 1; i < path.points.length - 2; i++) {
                 const xc = (path.points[i].x + path.points[i+1].x) / 2;
                 const yc = (path.points[i].y + path.points[i+1].y) / 2;
