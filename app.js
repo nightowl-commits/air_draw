@@ -385,11 +385,6 @@ function detectGestures() {
                         points: [canvasPt]
                     };
                     drawingPaths.push(currentDrawPaths[idx]);
-                    createShockwave({x: smoothX * width, y: smoothY * height}, currentDrawPaths[idx].color);
-                    triggerZap();
-                    uiGesture.innerText = "AIR TYPING";
-                    uiGesture.style.color = currentDrawPaths[idx].color;
-                }
                 }
             } else if (allowDraw && drawActiveFrames === 0) {
                 // Return point to absolute map
