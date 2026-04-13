@@ -356,7 +356,7 @@ function detectGestures() {
                     if (Math.hypot(canvasPt.x - last.x, canvasPt.y - last.y) > 1.5) {
                         pts.push(canvasPt);
                     }
-                } else {
+                } else if (currentHands.length < 2) { // Only start new strokes with 1 hand
                     currentDrawPaths[idx] = {
                         color: themes[currentTheme](time, idx + 1, 3),
                         points: [canvasPt]
@@ -437,6 +437,12 @@ function detectGestures() {
             }
             lastTwoHandMid = mid;
             uiGesture.innerText = "MOVING WORLD";
+            uiGesture.style.color = '#00f0ff';
+            
+            // Prevent erasing/placement flicker in Blocks Mode during move
+            pinchStartTime = 0;
+            blockLoadProgress = 0;
+            blockHover = null; 
         } else {
             lastTwoHandMid = null;
         }
