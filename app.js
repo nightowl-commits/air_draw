@@ -258,11 +258,11 @@ function initColorWheel() {
     `;
     themeBar.appendChild(toggleBtn);
 
-    // ── Floating wheel popup (above the theme bar) ─────────────────────────
+    // ── Floating wheel popup (above the theme bar, anchored to app-container) ──
     const popup = document.createElement('div');
     popup.style.cssText = `
         position: absolute;
-        bottom: calc(100% + 14px);
+        bottom: 90px;
         left: 50%; transform: translateX(-50%);
         display: none;
         z-index: 30;
@@ -278,8 +278,8 @@ function initColorWheel() {
         display: block;
     `;
     popup.appendChild(wheelCanvas);
-    themeBar.style.position = 'relative'; // ensure popup anchors correctly
-    themeBar.appendChild(popup);
+    // Append popup to app-container so it doesn't affect theme bar layout
+    document.querySelector('.app-container').appendChild(popup);
 
     // ── Draw hue ring ──────────────────────────────────────────────────────
     const wCtx = wheelCanvas.getContext('2d');
@@ -513,7 +513,7 @@ function detectGestures() {
                 }
             }
 
-            if (isPointing && allowDraw && (time - lastWipeTime > 2.5) && currentHands.length === 1) {
+            if (isPointing && allowDraw && (time - lastWipeTime > 2.5)) {
                 // Rolling-window average for smoothing
                 smoothHistory.push({ x: index.x, y: index.y });
                 if (smoothHistory.length > SMOOTH_WINDOW) smoothHistory.shift();
@@ -530,13 +530,15 @@ function detectGestures() {
                     y: lastRawIndex.y * height
                 };
 
+                drawActiveFrames = DRAW_STICKY_FRAMES; // reset sticky counter on active draw
+
                 if (currentDrawPaths[idx]) {
                     const pts = currentDrawPaths[idx].points;
                     const last = pts[pts.length - 1];
                     if (Math.hypot(canvasPt.x - last.x, canvasPt.y - last.y) > 2.5) {
                         pts.push(canvasPt);
                     }
-                } else if (currentHands.length < 2) {
+                } else {
                     currentDrawPaths[idx] = {
                         color: airDrawColor, // fixed colour — never changes on lift
                         points: [canvasPt]
@@ -545,10 +547,15 @@ function detectGestures() {
                     uiGesture.innerText = "AIR DRAW";
                 }
             } else if (allowDraw) {
-                smoothHistory = []; // reset per stroke
-                lastRawIndex = { x: 0, y: 0 };
-                if (currentDrawPaths[idx]) {
-                    currentDrawPaths[idx] = null;
+                // Sticky frames: keep stroke alive briefly to prevent mid-stroke breaks
+                if (drawActiveFrames > 0) {
+                    drawActiveFrames--;
+                } else {
+                    smoothHistory = [];
+                    lastRawIndex = { x: 0, y: 0 };
+                    if (currentDrawPaths[idx]) {
+                        currentDrawPaths[idx] = null;
+                    }
                 }
             }
         }
