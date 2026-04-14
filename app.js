@@ -41,7 +41,7 @@ let smoothedIndex = { x: 0, y: 0 };
 let waveFrames = [];
 let lastWipeTime = 0; // Cooldown timer after wipe gesture
 let drawActiveFrames = 0; // Sticky draw counter - prevents flicker breaks
-const DRAW_STICKY_FRAMES = 6; // Keep drawing for this many frames after gesture flickers off
+const DRAW_STICKY_FRAMES = 20; // ~340ms at 60fps — enough gap to move between cursive letters
 let lastRawIndex = { x: 0, y: 0 }; // For light smoothing
 let drawOffset = { x: 0, y: 0 }; // Shared with blockOffset for cross-mode consistency
 
@@ -521,7 +521,8 @@ function detectGestures() {
                 const avgY = smoothHistory.reduce((s, p) => s + p.y, 0) / smoothHistory.length;
 
                 // Secondary EMA pass for extra silkiness
-                if (!lastRawIndex.x) lastRawIndex = { x: avgX, y: avgY };
+                // On the very first point of a new stroke, snap directly to position (no lerp jump)
+                if (!currentDrawPaths[idx]) lastRawIndex = { x: avgX, y: avgY };
                 lastRawIndex.x = lastRawIndex.x * 0.55 + avgX * 0.45;
                 lastRawIndex.y = lastRawIndex.y * 0.55 + avgY * 0.45;
 
@@ -552,7 +553,9 @@ function detectGestures() {
                     drawActiveFrames--;
                 } else {
                     smoothHistory = [];
-                    lastRawIndex = { x: 0, y: 0 };
+                    // Do NOT reset lastRawIndex — preserving last position means the
+                    // next stroke starts exactly where the last one ended, so cursive
+                    // letters connect instead of jumping to a new position.
                     if (currentDrawPaths[idx]) {
                         currentDrawPaths[idx] = null;
                     }
