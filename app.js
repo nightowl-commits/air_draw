@@ -352,7 +352,6 @@ function detectGestures() {
                 if (currentDrawPaths[idx]) {
                     const pts = currentDrawPaths[idx].points;
                     const last = pts[pts.length - 1];
-                    // Correctly map stroke to world coordinates shifted by offset
                     if (Math.hypot(canvasPt.x - last.x, canvasPt.y - last.y) > 1.5) {
                         pts.push(canvasPt);
                     }
@@ -371,39 +370,8 @@ function detectGestures() {
                 }
             }
         } 
-        
-        // --- SHARED WORLD PANNING ---
-        if (currentHands.length >= 2 && allowDraw) {
-            const h2 = currentHands[1];
-            // EXPLICIT CALCULATION: Midpoint of thumb-index midpoints of BOTH hands 
-            const mid = {
-                x: ((hand[4].x + hand[8].x)/2 + (h2[4].x + h2[8].x)/2) / 2,
-                y: ((hand[4].y + hand[8].y)/2 + (h2[4].y + h2[8].y)/2) / 2
-            };
-            
-            if (lastTwoHandMid) {
-                // Apply the exact delta scaling from the original video version
-                const dx = (mid.x - lastTwoHandMid.x) * width;
-                const dy = (mid.y - lastTwoHandMid.y) * height;
-                
-                blockOffset.x += dx;
-                blockOffset.y += dy;
-            }
-            lastTwoHandMid = mid;
-            
-            uiGesture.innerText = "MOVING WORLD";
-            uiGesture.style.color = '#00f0ff';
-            
-            pinchStartTime = 0;
-            blockLoadProgress = 0;
-            blockHover = null; 
-            currentDrawPaths[idx] = null;
-        } else {
-            lastTwoHandMid = null;
-        }
-        
+
         if (isBlocksMode && currentHands.length < 2) {
-            // --- BLOCKS MODE ---
             // Swipe-to-clear: ONLY if one hand is present to avoid accidental wipe while moving
             if (allowDraw) {
                 if (waveFrames.length > 0) {
@@ -482,7 +450,32 @@ function detectGestures() {
                 }
             }
         }
-    });
+    }); // End per-hand loop
+
+    // --- SHARED WORLD PANNING (Blocks Only) ---
+    if (currentHands.length >= 2) {
+        const h1 = currentHands[0];
+        const h2 = currentHands[1];
+        const mid = {
+            x: ((h1[4].x + h1[8].x)/2 + (h2[4].x + h2[8].x)/2) / 2,
+            y: ((h1[4].y + h1[8].y)/2 + (h2[4].y + h2[8].y)/2) / 2
+        };
+        
+        if (lastTwoHandMid) {
+            blockOffset.x += (mid.x - lastTwoHandMid.x) * width;
+            blockOffset.y += (mid.y - lastTwoHandMid.y) * height;
+        }
+        lastTwoHandMid = mid;
+        
+        uiGesture.innerText = "MOVING BLOCKS";
+        uiGesture.style.color = '#00f0ff';
+        
+        pinchStartTime = 0;
+        blockLoadProgress = 0;
+        blockHover = null; 
+    } else {
+        lastTwoHandMid = null;
+    }
 
     if (currentHands[0]) {
         const spread = getDist(currentHands[0][8], currentHands[0][20]);
@@ -779,7 +772,6 @@ function renderLoop(timestamp) {
 
     if (drawingPaths.length > 0) {
         ctx.save();
-        // REMOVED blockOffset translation to keep text static
         ctx.lineJoin = 'round';
         ctx.lineCap = 'round';
         
