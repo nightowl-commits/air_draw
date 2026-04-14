@@ -344,9 +344,10 @@ function detectGestures() {
                 lastRawIndex.x = lastRawIndex.x * 0.3 + index.x * 0.7;
                 lastRawIndex.y = lastRawIndex.y * 0.3 + index.y * 0.7;
                 
+                // RESTORED ORIGINAL COORDINATES (Screen mapping)
                 const canvasPt = {
-                    x: (lastRawIndex.x * width) - blockOffset.x,
-                    y: (lastRawIndex.y * height) - blockOffset.y
+                    x: lastRawIndex.x * width,
+                    y: lastRawIndex.y * height
                 };
                 
                 if (currentDrawPaths[idx]) {
