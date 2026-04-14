@@ -45,6 +45,15 @@ const DRAW_STICKY_FRAMES = 6; // Keep drawing for this many frames after gesture
 let lastRawIndex = { x: 0, y: 0 }; // For light smoothing
 let drawOffset = { x: 0, y: 0 }; // Shared with blockOffset for cross-mode consistency
 
+// --- Air Draw Color & Smoothing ---
+let airDrawColor = '#39ff14'; // Default neon green; only changed via color wheel
+const SMOOTH_WINDOW = 8;      // Rolling-average window size for stroke smoothing
+let smoothHistory = [];        // Raw position history for smoothing
+
+// --- Air Draw Pan (two-hand move, mirrors blocks pan) ---
+let drawOffset2 = { x: 0, y: 0 }; // Pixel offset applied to all drawing paths
+let lastTwoHandMidDraw = null;      // Last midpoint while panning in air-draw mode
+
 // --- Blocks Mode State ---
 let isBlocksMode = false;
 const BLOCK_SIZE = 40;
@@ -204,9 +213,172 @@ document.getElementById('startBtn').addEventListener('click', () => {
     document.getElementById('hud').classList.remove('hidden');
     document.getElementById('themeContainer').classList.remove('hidden');
     initAudio();
+    initColorWheel();
     initMediaPipe();
     requestAnimationFrame(renderLoop);
 });
+
+/**
+ * COLOR WHEEL
+ * Appended after the last theme button (Nebula) inside the theme bar.
+ * A small swatch button opens a canvas hue-ring + 6 quick swatches.
+ * Picking a colour sets airDrawColor and updates the swatch.
+ * Picking a theme button (Spectrum…Nebula) still works as before;
+ * the colour wheel is an additional "custom colour" option.
+ */
+function initColorWheel() {
+    const WHEEL_R = 72;
+    const WHEEL_INNER = 40;
+    const SIZE = (WHEEL_R + 8) * 2;
+
+    const themeBar = document.getElementById('themeContainer');
+
+    // ── Divider ────────────────────────────────────────────────────────────
+    const divider = document.createElement('div');
+    divider.style.cssText = `
+        width: 1px; height: 28px;
+        background: rgba(255,255,255,0.15);
+        align-self: center; margin: 0 4px; flex-shrink: 0;
+    `;
+    themeBar.appendChild(divider);
+
+    // ── Toggle swatch button ───────────────────────────────────────────────
+    const toggleBtn = document.createElement('button');
+    toggleBtn.id = 'colorWheelToggle';
+    toggleBtn.title = 'Custom draw colour';
+    toggleBtn.style.cssText = `
+        width: 36px; height: 36px; flex-shrink: 0;
+        border-radius: 50%;
+        border: 2px solid rgba(255,255,255,0.3);
+        background: ${airDrawColor};
+        box-shadow: 0 0 10px ${airDrawColor};
+        cursor: pointer; outline: none;
+        transition: transform 0.2s, box-shadow 0.2s;
+        position: relative;
+    `;
+    themeBar.appendChild(toggleBtn);
+
+    // ── Floating wheel popup (above the theme bar) ─────────────────────────
+    const popup = document.createElement('div');
+    popup.style.cssText = `
+        position: absolute;
+        bottom: calc(100% + 14px);
+        left: 50%; transform: translateX(-50%);
+        display: none;
+        z-index: 30;
+    `;
+
+    const wheelCanvas = document.createElement('canvas');
+    wheelCanvas.width = SIZE;
+    wheelCanvas.height = SIZE;
+    wheelCanvas.style.cssText = `
+        border-radius: 50%;
+        cursor: crosshair;
+        box-shadow: 0 6px 30px rgba(0,0,0,0.7);
+        display: block;
+    `;
+    popup.appendChild(wheelCanvas);
+    themeBar.style.position = 'relative'; // ensure popup anchors correctly
+    themeBar.appendChild(popup);
+
+    // ── Draw hue ring ──────────────────────────────────────────────────────
+    const wCtx = wheelCanvas.getContext('2d');
+    const cx = SIZE / 2, cy = SIZE / 2;
+    for (let i = 0; i < 360; i++) {
+        const a = (i / 360) * Math.PI * 2;
+        const na = ((i + 1) / 360) * Math.PI * 2;
+        wCtx.beginPath();
+        wCtx.moveTo(cx, cy);
+        wCtx.arc(cx, cy, WHEEL_R, a, na);
+        wCtx.closePath();
+        wCtx.fillStyle = `hsl(${i},100%,55%)`;
+        wCtx.fill();
+    }
+    // Donut hole
+    wCtx.globalCompositeOperation = 'destination-out';
+    wCtx.beginPath();
+    wCtx.arc(cx, cy, WHEEL_INNER, 0, Math.PI * 2);
+    wCtx.fill();
+    wCtx.globalCompositeOperation = 'source-over';
+
+    // Inner swatches
+    const SWATCHES = ['#39ff14','#ffffff','#ff003c','#00f0ff','#ffcc00','#cc00ff'];
+    const swatchR = 11;
+    const swatchDist = 22;
+    SWATCHES.forEach((col, i) => {
+        const a = (i / SWATCHES.length) * Math.PI * 2 - Math.PI / 2;
+        const sx = cx + Math.cos(a) * swatchDist;
+        const sy = cy + Math.sin(a) * swatchDist;
+        wCtx.beginPath();
+        wCtx.arc(sx, sy, swatchR, 0, Math.PI * 2);
+        wCtx.fillStyle = col;
+        wCtx.fill();
+        wCtx.strokeStyle = 'rgba(255,255,255,0.45)';
+        wCtx.lineWidth = 1.5;
+        wCtx.stroke();
+    });
+
+    // ── Colour-at-point helper ─────────────────────────────────────────────
+    function colourAt(ex, ey) {
+        const rect = wheelCanvas.getBoundingClientRect();
+        const px = (ex - rect.left) * (SIZE / rect.width);
+        const py = (ey - rect.top)  * (SIZE / rect.height);
+        const dx = px - cx, dy = py - cy;
+        const dist = Math.hypot(dx, dy);
+        if (dist >= WHEEL_INNER && dist <= WHEEL_R) {
+            const hue = ((Math.atan2(dy, dx) / (Math.PI * 2)) * 360 + 360) % 360;
+            return `hsl(${Math.round(hue)},100%,55%)`;
+        }
+        for (let i = 0; i < SWATCHES.length; i++) {
+            const a = (i / SWATCHES.length) * Math.PI * 2 - Math.PI / 2;
+            const sx = cx + Math.cos(a) * swatchDist;
+            const sy = cy + Math.sin(a) * swatchDist;
+            if (Math.hypot(px - sx, py - sy) <= swatchR) return SWATCHES[i];
+        }
+        return null;
+    }
+
+    function applyColour(col) {
+        if (!col) return;
+        airDrawColor = col;
+        toggleBtn.style.background = col;
+        toggleBtn.style.boxShadow = `0 0 12px ${col}`;
+        popup.style.display = 'none';
+        wheelOpen = false;
+        // Deactivate theme buttons visually so user knows custom colour is active
+        document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+        toggleBtn.style.border = '2px solid rgba(255,255,255,0.7)';
+    }
+
+    let wheelOpen = false;
+    toggleBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        wheelOpen = !wheelOpen;
+        popup.style.display = wheelOpen ? 'block' : 'none';
+        toggleBtn.style.transform = wheelOpen ? 'scale(1.2)' : 'scale(1)';
+    });
+
+    wheelCanvas.addEventListener('click', (e) => {
+        applyColour(colourAt(e.clientX, e.clientY));
+    });
+
+    // Close wheel if user clicks a theme button
+    document.querySelectorAll('.theme-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            popup.style.display = 'none';
+            wheelOpen = false;
+            toggleBtn.style.border = '2px solid rgba(255,255,255,0.3)';
+        });
+    });
+
+    // Close on outside click
+    document.addEventListener('click', (e) => {
+        if (!popup.contains(e.target) && e.target !== toggleBtn) {
+            popup.style.display = 'none';
+            wheelOpen = false;
+        }
+    });
+}
 
 /**
  * AUDIO ENGINE
@@ -315,21 +487,23 @@ function detectGestures() {
         const allowDraw = (idx === 0);
 
         if (isAirDrawMode) {
-            // Swipe-to-clear: ONLY if exactly one hand is present
+            // Two-hand pan: move all drawn strokes together (handled outside per-hand loop below)
+            // Single-hand logic only runs when exactly one hand is present
             if (allowDraw && currentHands.length === 1) {
+                // Swipe-to-clear
                 if (waveFrames.length > 0) {
                     const lastW = waveFrames[waveFrames.length - 1];
                     if (Math.abs(wrist.x - lastW.x) > 0.20 && (time - lastW.time) < 0.1) waveFrames = [];
                 }
                 waveFrames.push({x: wrist.x, time: time});
                 if (waveFrames.length > 15) waveFrames.shift();
-                
                 for (let i = 0; i < waveFrames.length - 1; i++) {
                     let dx = Math.abs(waveFrames[i].x - wrist.x);
                     let dt = time - waveFrames[i].time;
                     if (dx > 0.30 && dt < 0.6) {
                         drawingPaths = [];
                         currentDrawPaths[0] = null;
+                        smoothHistory = [];
                         uiGesture.innerText = "WIPE CLEAR!";
                         uiGesture.style.color = '#ff003c';
                         waveFrames = [];
@@ -340,37 +514,44 @@ function detectGestures() {
             }
 
             if (isPointing && allowDraw && (time - lastWipeTime > 2.5) && currentHands.length === 1) {
-                if (!lastRawIndex.x) lastRawIndex = { x: index.x, y: index.y };
-                lastRawIndex.x = lastRawIndex.x * 0.3 + index.x * 0.7;
-                lastRawIndex.y = lastRawIndex.y * 0.3 + index.y * 0.7;
-                
-                // RESTORED ORIGINAL COORDINATES (Screen mapping)
+                // Rolling-window average for smoothing
+                smoothHistory.push({ x: index.x, y: index.y });
+                if (smoothHistory.length > SMOOTH_WINDOW) smoothHistory.shift();
+                const avgX = smoothHistory.reduce((s, p) => s + p.x, 0) / smoothHistory.length;
+                const avgY = smoothHistory.reduce((s, p) => s + p.y, 0) / smoothHistory.length;
+
+                // Secondary EMA pass for extra silkiness
+                if (!lastRawIndex.x) lastRawIndex = { x: avgX, y: avgY };
+                lastRawIndex.x = lastRawIndex.x * 0.55 + avgX * 0.45;
+                lastRawIndex.y = lastRawIndex.y * 0.55 + avgY * 0.45;
+
                 const canvasPt = {
                     x: lastRawIndex.x * width,
                     y: lastRawIndex.y * height
                 };
-                
+
                 if (currentDrawPaths[idx]) {
                     const pts = currentDrawPaths[idx].points;
                     const last = pts[pts.length - 1];
-                    if (Math.hypot(canvasPt.x - last.x, canvasPt.y - last.y) > 1.5) {
+                    if (Math.hypot(canvasPt.x - last.x, canvasPt.y - last.y) > 2.5) {
                         pts.push(canvasPt);
                     }
-                } else if (currentHands.length < 2) { 
+                } else if (currentHands.length < 2) {
                     currentDrawPaths[idx] = {
-                        color: themes[currentTheme](time, idx + 1, 3),
+                        color: airDrawColor, // fixed colour — never changes on lift
                         points: [canvasPt]
                     };
                     drawingPaths.push(currentDrawPaths[idx]);
-                    uiGesture.innerText = "AIR TYPING";
+                    uiGesture.innerText = "AIR DRAW";
                 }
             } else if (allowDraw) {
+                smoothHistory = []; // reset per stroke
                 lastRawIndex = { x: 0, y: 0 };
                 if (currentDrawPaths[idx]) {
                     currentDrawPaths[idx] = null;
                 }
             }
-        } 
+        }
 
         if (isBlocksMode && currentHands.length < 2) {
             // Swipe-to-clear: ONLY if one hand is present to avoid accidental wipe while moving
@@ -453,7 +634,7 @@ function detectGestures() {
         }
     }); // End per-hand loop
 
-    // --- SHARED WORLD PANNING (Blocks Only) ---
+    // --- SHARED WORLD PANNING ---
     if (currentHands.length >= 2) {
         const h1 = currentHands[0];
         const h2 = currentHands[1];
@@ -461,21 +642,50 @@ function detectGestures() {
             x: ((h1[4].x + h1[8].x)/2 + (h2[4].x + h2[8].x)/2) / 2,
             y: ((h1[4].y + h1[8].y)/2 + (h2[4].y + h2[8].y)/2) / 2
         };
-        
-        if (lastTwoHandMid) {
-            blockOffset.x += (mid.x - lastTwoHandMid.x) * width;
-            blockOffset.y += (mid.y - lastTwoHandMid.y) * height;
+
+        if (isBlocksMode) {
+            if (lastTwoHandMid) {
+                blockOffset.x += (mid.x - lastTwoHandMid.x) * width;
+                blockOffset.y += (mid.y - lastTwoHandMid.y) * height;
+            }
+            lastTwoHandMid = mid;
+
+            uiGesture.innerText = "MOVING";
+            uiGesture.style.color = '#00f0ff';
+
+            pinchStartTime = 0;
+            blockLoadProgress = 0;
+            blockHover = null;
+        } else {
+            lastTwoHandMid = null;
         }
-        lastTwoHandMid = mid;
-        
-        uiGesture.innerText = "MOVING BLOCKS";
-        uiGesture.style.color = '#00f0ff';
-        
-        pinchStartTime = 0;
-        blockLoadProgress = 0;
-        blockHover = null; 
+
+        if (isAirDrawMode) {
+            if (lastTwoHandMidDraw) {
+                const dx = (mid.x - lastTwoHandMidDraw.x) * width;
+                const dy = (mid.y - lastTwoHandMidDraw.y) * height;
+                // Shift every point in every existing path
+                drawingPaths.forEach(path => {
+                    path.points.forEach(pt => {
+                        pt.x += dx;
+                        pt.y += dy;
+                    });
+                });
+            }
+            lastTwoHandMidDraw = mid;
+
+            uiGesture.innerText = "MOVING";
+            uiGesture.style.color = '#00f0ff';
+
+            // End any active stroke so pan doesn't draw
+            currentDrawPaths = [null, null];
+            smoothHistory = [];
+        } else {
+            lastTwoHandMidDraw = null;
+        }
     } else {
         lastTwoHandMid = null;
+        lastTwoHandMidDraw = null;
     }
 
     if (currentHands[0]) {
