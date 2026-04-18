@@ -47,7 +47,7 @@ let drawOffset = { x: 0, y: 0 }; // Shared with blockOffset for cross-mode consi
 
 // --- Air Draw Color & Smoothing ---
 let airDrawColor = '#39ff14'; // Default neon green; only changed via color wheel
-const SMOOTH_WINDOW = 8;      // Rolling-average window size for stroke smoothing
+const SMOOTH_WINDOW = 3;      // Tiny window — just enough to kill sensor noise, no lag
 let smoothHistory = [];        // Raw position history for smoothing
 
 // --- Air Draw Pan (two-hand move, mirrors blocks pan) ---
@@ -514,17 +514,20 @@ function detectGestures() {
             }
 
             if (isPointing && allowDraw && (time - lastWipeTime > 2.5)) {
-                // Rolling-window average for smoothing
+                // Step 1: tiny rolling average (3 frames) to kill jitter without adding lag
                 smoothHistory.push({ x: index.x, y: index.y });
                 if (smoothHistory.length > SMOOTH_WINDOW) smoothHistory.shift();
                 const avgX = smoothHistory.reduce((s, p) => s + p.x, 0) / smoothHistory.length;
                 const avgY = smoothHistory.reduce((s, p) => s + p.y, 0) / smoothHistory.length;
 
-                // Secondary EMA pass for extra silkiness
-                // On the very first point of a new stroke, snap directly to position (no lerp jump)
-                if (!currentDrawPaths[idx]) lastRawIndex = { x: avgX, y: avgY };
-                lastRawIndex.x = lastRawIndex.x * 0.55 + avgX * 0.45;
-                lastRawIndex.y = lastRawIndex.y * 0.55 + avgY * 0.45;
+                // Step 2: Light EMA — 0.2 old / 0.8 new keeps stroke tight to the finger.
+                // On stroke start, snap directly to finger (zero lag on first point).
+                if (!currentDrawPaths[idx]) {
+                    lastRawIndex = { x: avgX, y: avgY };
+                } else {
+                    lastRawIndex.x = lastRawIndex.x * 0.2 + avgX * 0.8;
+                    lastRawIndex.y = lastRawIndex.y * 0.2 + avgY * 0.8;
+                }
 
                 const canvasPt = {
                     x: lastRawIndex.x * width,
@@ -536,7 +539,8 @@ function detectGestures() {
                 if (currentDrawPaths[idx]) {
                     const pts = currentDrawPaths[idx].points;
                     const last = pts[pts.length - 1];
-                    if (Math.hypot(canvasPt.x - last.x, canvasPt.y - last.y) > 2.5) {
+                    // Lower threshold: record more points for higher-res stroke
+                    if (Math.hypot(canvasPt.x - last.x, canvasPt.y - last.y) > 1.0) {
                         pts.push(canvasPt);
                     }
                 } else {
@@ -998,28 +1002,41 @@ function renderLoop(timestamp) {
         
         drawingPaths.forEach(path => {
             if (path.points.length < 2) return;
+            const pts = path.points;
+
             ctx.beginPath();
-            ctx.moveTo(path.points[0].x, path.points[0].y);
-            
-            for (let i = 1; i < path.points.length - 2; i++) {
-                const xc = (path.points[i].x + path.points[i+1].x) / 2;
-                const yc = (path.points[i].y + path.points[i+1].y) / 2;
-                ctx.quadraticCurveTo(path.points[i].x, path.points[i].y, xc, yc);
-            }
-            if (path.points.length > 2) {
-                const p1 = path.points[path.points.length-2];
-                const p2 = path.points[path.points.length-1];
-                ctx.quadraticCurveTo(p1.x, p1.y, p2.x, p2.y);
+
+            if (pts.length === 2) {
+                ctx.moveTo(pts[0].x, pts[0].y);
+                ctx.lineTo(pts[1].x, pts[1].y);
             } else {
-                ctx.lineTo(path.points[1].x, path.points[1].y);
+                // Catmull-Rom spline → ultra-smooth curve through all recorded points.
+                // tension 0.5 gives natural pen feel without overshoot.
+                const tension = 0.5;
+                ctx.moveTo(pts[0].x, pts[0].y);
+                for (let i = 0; i < pts.length - 1; i++) {
+                    const p0 = pts[Math.max(i - 1, 0)];
+                    const p1 = pts[i];
+                    const p2 = pts[i + 1];
+                    const p3 = pts[Math.min(i + 2, pts.length - 1)];
+                    // Convert Catmull-Rom to cubic Bezier control points
+                    const cp1x = p1.x + (p2.x - p0.x) * tension / 3;
+                    const cp1y = p1.y + (p2.y - p0.y) * tension / 3;
+                    const cp2x = p2.x - (p3.x - p1.x) * tension / 3;
+                    const cp2y = p2.y - (p3.y - p1.y) * tension / 3;
+                    ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+                }
             }
+
+            // Outer neon glow
             ctx.strokeStyle = path.color;
             ctx.lineWidth = 12;
-            ctx.shadowBlur = 15;
+            ctx.shadowBlur = 18;
             ctx.shadowColor = path.color;
             ctx.stroke();
             
-            ctx.lineWidth = 4;
+            // Inner bright core
+            ctx.lineWidth = 3;
             ctx.strokeStyle = '#fff';
             ctx.shadowBlur = 0;
             ctx.stroke();
